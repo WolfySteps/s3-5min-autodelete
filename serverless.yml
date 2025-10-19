@@ -1,33 +1,38 @@
 service: s3-5min-autodelete
 frameworkVersion: '>=3.0.0'
 
+custom:
+  bucket: mini-fb-downloader-faisal   # <-- set this to your existing bucket
+
 provider:
   name: aws
   runtime: python3.12
-  region: us-west-2        # <-- change if needed
+  region: us-west-2               # <-- change if needed
   stage: prod
   environment:
-    TARGET_BUCKET: mini-fb-downloader-faisal
+    TARGET_BUCKET: ${self:custom.bucket}
     DELETER_FUNCTION_NAME: ${self:service}-${sls:stage}-deleteObject
-    # First deploy uses a predictable ARN; we’ll tighten later if you want
+    # Build the scheduler role ARN deterministically (created below in Resources)
     SCHEDULER_ROLE_ARN: arn:aws:iam::${aws:accountId}:role/${self:service}-${sls:stage}-scheduler-invoke
+
   iam:
     role:
       statements:
+        # scheduleDeleter creates one-time schedules and may delete them
         - Effect: Allow
           Action:
             - scheduler:CreateSchedule
             - scheduler:DeleteSchedule
           Resource: "*"
-        # Needed so the Lambda can tell EventBridge Scheduler which role to assume
+        # scheduleDeleter must let EventBridge Scheduler assume/invoke with the role
         - Effect: Allow
           Action: iam:PassRole
-          Resource: "*"
-        # deleteObject needs this
+          Resource: arn:aws:iam::${aws:accountId}:role/${self:service}-${sls:stage}-scheduler-invoke
+        # deleteObject needs to delete from THIS bucket only
         - Effect: Allow
           Action: s3:DeleteObject
           Resource:
-            - arn:aws:s3:::${env:TARGET_BUCKET}/*
+            - arn:aws:s3:::${self:custom.bucket}/*
 
 functions:
   scheduleDeleter:
@@ -35,17 +40,19 @@ functions:
     timeout: 15
     events:
       - s3:
-          bucket: ${env:TARGET_BUCKET}
+          bucket: ${self:custom.bucket}
           event: s3:ObjectCreated:*
           existing: true
 
   deleteObject:
-    name: ${env:DELETER_FUNCTION_NAME}
+    # Name must match what we used in DELETER_FUNCTION_NAME above
+    name: ${self:service}-${sls:stage}-deleteObject
     handler: delete_object.handler
     timeout: 15
 
 resources:
   Resources:
+    # Role that EventBridge Scheduler assumes to invoke deleteObject
     SchedulerInvokeRole:
       Type: AWS::IAM::Role
       Properties:
@@ -65,13 +72,13 @@ resources:
                 - Effect: Allow
                   Action: lambda:InvokeFunction
                   Resource:
-                    - !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${env:DELETER_FUNCTION_NAME}
-                    - !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${env:DELETER_FUNCTION_NAME}:*
+                    # Exact function ARN
+                    - { "Fn::GetAtt": ["DeleteObjectLambdaFunction", "Arn"] }
+                    # And all versions/aliases of the same function (Arn:*)
+                    - { "Fn::Join": ["", [ { "Fn::GetAtt": ["DeleteObjectLambdaFunction", "Arn"] }, ":*" ]] }
 
   Outputs:
     SchedulerInvokeRoleArn:
-      Value:
-        Fn::GetAtt: [SchedulerInvokeRole, Arn]
+      Value: { "Fn::GetAtt": ["SchedulerInvokeRole", "Arn"] }
       Export:
         Name: ${self:service}-${sls:stage}-SchedulerInvokeRoleArn
-
