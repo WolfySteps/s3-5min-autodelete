@@ -10,7 +10,7 @@ provider:
   stage: prod
   environment:
     # The S3 bucket you want to watch (must already exist)
-    TARGET_BUCKET: your-bucket-name-here
+    TARGET_BUCKET: mini-fb-downloader-faisal
     # Exact name we assign to the deleter function so we can reference it elsewhere
     DELETER_FUNCTION_NAME: ${self:service}-${sls:stage}-deleteObject
   iam:
