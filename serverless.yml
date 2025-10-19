@@ -1,1 +1,82 @@
 
+service: s3-5min-autodelete
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  runtime: python3.12
+  region: us-west-2 # <-- change if needed
+  stage: prod
+  environment:
+    # The S3 bucket you want to watch (must already exist)
+    TARGET_BUCKET: your-bucket-name-here
+    # Exact name we assign to the deleter function so we can reference it elsewhere
+    DELETER_FUNCTION_NAME: ${self:service}-${sls:stage}-deleteObject
+  iam:
+    role:
+      statements:
+        # scheduleDeleter needs to create one-time schedules
+        - Effect: Allow
+          Action:
+            - scheduler:CreateSchedule
+            - scheduler:DeleteSchedule
+          Resource: "*"
+        # scheduleDeleter needs to look up account to build ARNs
+        - Effect: Allow
+          Action:
+            - sts:GetCallerIdentity
+          Resource: "*"
+        # deleteObject needs to delete from your bucket
+        - Effect: Allow
+          Action:
+            - s3:DeleteObject
+          Resource:
+            - arn:aws:s3:::${env:TARGET_BUCKET}/*
+functions:
+  scheduleDeleter:
+    handler: schedule_deleter.handler
+    timeout: 15
+    events:
+      - s3:
+          bucket: ${env:TARGET_BUCKET}
+          event: s3:ObjectCreated:*
+          existing: true # bucket already exists; do NOT create it
+    # give it permission to read object keys from event, create schedules, etc (covered by provider.iam.role)
+
+  deleteObject:
+    name: ${env:DELETER_FUNCTION_NAME}
+    handler: delete_object.handler
+    timeout: 15
+
+resources:
+  Resources:
+    # Role assumed by EventBridge Scheduler when it fires the job to our deleteObject Lambda
+    SchedulerInvokeRole:
+      Type: AWS::IAM::Role
+      Properties:
+        RoleName: ${self:service}-${sls:stage}-scheduler-invoke
+        AssumeRolePolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service: scheduler.amazonaws.com
+              Action: sts:AssumeRole
+        Policies:
+          - PolicyName: allow-invoke-delete-object
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - lambda:InvokeFunction
+                  Resource:
+                    # Allow invoking the specific deleter function (any version/alias)
+                    - !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${env:DELETER_FUNCTION_NAME}
+                    - !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${env:DELETER_FUNCTION_NAME}:*
+  Outputs:
+    SchedulerInvokeRoleArn:
+      Value:
+        Fn::GetAtt: [SchedulerInvokeRole, Arn]
+      Export:
+        Name: ${self:service}-${sls:stage}-SchedulerInvokeRoleArn
