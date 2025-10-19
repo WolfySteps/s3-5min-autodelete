@@ -11,7 +11,6 @@ def _safe_name(s):
     return re.sub(r'[^A-Za-z0-9.\-_/#]', '-', s)[:256]
 
 def _deleter_arn():
-    # Build Lambda ARN from environment (region/account inferred via Lambda)
     region = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION")
     account = boto3.client("sts").get_caller_identity()["Account"]
     return f"arn:aws:lambda:{region}:{account}:function:{DELETER_FUNCTION_NAME}"
@@ -22,7 +21,6 @@ def handler(event, context):
     for rec in event.get("Records", []):
         bucket = rec["s3"]["bucket"]["name"]
         key = unquote_plus(rec["s3"]["object"]["key"])
-
         fire_at = (datetime.datetime.utcnow() + datetime.timedelta(minutes=5)).replace(microsecond=0).isoformat() + "Z"
 
         cleaned_key = _safe_name(key.replace("/", "-"))
