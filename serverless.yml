@@ -1,33 +1,29 @@
-
 service: s3-5min-autodelete
 frameworkVersion: '3'
 
 provider:
   name: aws
   runtime: python3.12
-  region: us-west-2            # <-- change if needed
+  region: us-west-2        # <-- change if needed
   stage: prod
   environment:
     TARGET_BUCKET: mini-fb-downloader-faisal
     DELETER_FUNCTION_NAME: ${self:service}-${sls:stage}-deleteObject
-    # Pull the role ARN from this stack's CloudFormation outputs:
-    SCHEDULER_ROLE_ARN: ${cf:${self:service}-${sls:stage}.SchedulerInvokeRoleArn}
-        #SCHEDULER_ROLE_ARN: arn:aws:iam::${aws:accountId}:role/${self:service}-${sls:stage}-scheduler-invoke
-
+    # First deploy uses a predictable ARN; we’ll tighten later if you want
+    SCHEDULER_ROLE_ARN: arn:aws:iam::${aws:accountId}:role/${self:service}-${sls:stage}-scheduler-invoke
   iam:
     role:
       statements:
-        # scheduleDeleter must create schedules
         - Effect: Allow
           Action:
             - scheduler:CreateSchedule
             - scheduler:DeleteSchedule
           Resource: "*"
-        # scheduleDeleter must be able to pass the invoke role to Scheduler
+        # Needed so the Lambda can tell EventBridge Scheduler which role to assume
         - Effect: Allow
           Action: iam:PassRole
-          Resource: "*" #${cf:${self:service}-${sls:stage}.SchedulerInvokeRoleArn}
-        # deleteObject must delete from your bucket
+          Resource: "*"
+        # deleteObject needs this
         - Effect: Allow
           Action: s3:DeleteObject
           Resource:
@@ -58,7 +54,8 @@ resources:
           Version: '2012-10-17'
           Statement:
             - Effect: Allow
-              Principal: { Service: scheduler.amazonaws.com }
+              Principal:
+                Service: scheduler.amazonaws.com
               Action: sts:AssumeRole
         Policies:
           - PolicyName: allow-invoke-delete-object
@@ -73,7 +70,8 @@ resources:
 
   Outputs:
     SchedulerInvokeRoleArn:
-      Value: { "Fn::GetAtt": ["SchedulerInvokeRole", "Arn"] }
+      Value:
+        Fn::GetAtt: [SchedulerInvokeRole, Arn]
       Export:
         Name: ${self:service}-${sls:stage}-SchedulerInvokeRoleArn
 
