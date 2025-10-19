@@ -11,7 +11,9 @@ provider:
     TARGET_BUCKET: mini-fb-downloader-faisal
     DELETER_FUNCTION_NAME: ${self:service}-${sls:stage}-deleteObject
     # Pull the role ARN from this stack's CloudFormation outputs:
-    SCHEDULER_ROLE_ARN: ${cf:${self:service}-${sls:stage}.SchedulerInvokeRoleArn}
+    #SCHEDULER_ROLE_ARN: ${cf:${self:service}-${sls:stage}.SchedulerInvokeRoleArn}
+        SCHEDULER_ROLE_ARN: arn:aws:iam::${aws:accountId}:role/${self:service}-${sls:stage}-scheduler-invoke
+
   iam:
     role:
       statements:
@@ -24,7 +26,7 @@ provider:
         # scheduleDeleter must be able to pass the invoke role to Scheduler
         - Effect: Allow
           Action: iam:PassRole
-          Resource: ${cf:${self:service}-${sls:stage}.SchedulerInvokeRoleArn}
+          Resource: "*" #${cf:${self:service}-${sls:stage}.SchedulerInvokeRoleArn}
         # deleteObject must delete from your bucket
         - Effect: Allow
           Action: s3:DeleteObject
