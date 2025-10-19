@@ -1,73 +1,37 @@
+# .github/workflows/deploy.yml
 name: Deploy to AWS (Serverless)
 
 on:
-  # Deploy automatically on ANY change pushed to main (no path filters)
   push:
     branches: [ main ]
-
-  # Run checks on PRs to any branch (no deploy)
   pull_request:
-
-  # Allow manual runs from the Actions tab
   workflow_dispatch:
 
-# Prevent overlapping deploys to the same stack if multiple pushes happen quickly
 concurrency:
   group: deploy-${{ github.ref }}
   cancel-in-progress: true
 
 env:
-  AWS_REGION: us-west-2            # ⬅️ change to your region if needed
-  NODE_VERSION: '20'               # Serverless runs great on Node 18/20/22
-  # If your serverless.yml uses env vars, you can pass them here or via secrets:
-  # TARGET_BUCKET: your-bucket-name   # better to keep inside serverless.yml for now
+  AWS_REGION: us-west-2      # <- your region
+  NODE_VERSION: '20'
+  SLS_DISABLE_AUTO_UPDATE: '1'   # prevent upgrade to v4 on the runner
 
 jobs:
-  validate:
-    name: Validate
+  deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: Install Serverless
-        run: npm install -g serverless
+      - name: Install Serverless v3
+        run: npm install -g serverless@3.39.0
 
       - name: Print Serverless version
-        run: sls --version
+        run: serverless --version
 
-      # If your repo has a package.json for plugins, you could add:
-      # - run: npm ci
-
-      - name: Serverless config check
-        run: sls print --stage prod
-
-  deploy:
-    name: Deploy
-    runs-on: ubuntu-latest
-    needs: validate
-    if: github.ref == 'refs/heads/main'   # only deploy from main
-    permissions:
-      contents: read
-      id-token: write   # not used unless you switch to OIDC later
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
-      - name: Install Serverless
-        run: npm install -g serverless
-
-      # Configure AWS creds (using long-lived keys stored as repo secrets)
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -75,7 +39,8 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # If your serverless.yml lives in a subfolder, set working-directory on this step.
-      - name: Deploy with Serverless
-        run: sls deploy --stage prod
-        # working-directory: ./infra   # ⬅️ uncomment & update if your files are in a subfolder
+      - name: Validate config
+        run: serverless print --stage prod
+
+      - name: Deploy
+        run: serverless deploy --stage prod
