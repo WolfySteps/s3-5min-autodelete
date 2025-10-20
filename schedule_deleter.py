@@ -21,7 +21,7 @@ def handler(event, context):
     for rec in event.get("Records", []):
         bucket = rec["s3"]["bucket"]["name"]
         key = unquote_plus(rec["s3"]["object"]["key"])
-        fire_at = (datetime.datetime.utcnow() + datetime.timedelta(minutes=3)).replace(microsecond=0).isoformat() + "Z"
+        fire_at = (datetime.datetime.utcnow() + datetime.timedelta(minutes=600)).replace(microsecond=0).isoformat() + "Z"
 
         cleaned_key = _safe_name(key.replace("/", "-"))
         schedule_name = _safe_name(f"del-{bucket}-{cleaned_key}-{int(datetime.datetime.utcnow().timestamp())}")
